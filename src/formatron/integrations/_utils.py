@@ -5,7 +5,7 @@ from functools import lru_cache
 
 def _multiple_replace(replacements: typing.Dict[bytes, bytes], regex: re.Pattern[bytes], text: bytes) -> bytes:
     # For each match, look-up corresponding value in dictionary
-    return regex.sub(lambda mo: replacements[mo.group()], text)
+    return regex.sub(lambda mo: replacements.get(mo.group(), mo.group()), text)
 
 
 Processors = set[typing.Literal["sentencepiece", "<0xHH>", "dot_G"]]
@@ -13,9 +13,12 @@ Processors = set[typing.Literal["sentencepiece", "<0xHH>", "dot_G"]]
 
 def _autodetect_processors(vocab: typing.Dict[str, int]):
     result = set()
+    hack_present = any(i.find('\u2581') != -1 for i in vocab.keys())
     llama_present = any(i.find('<0xF0>') != -1 for i in vocab.keys())
     underscore_present = (len([1 for i in vocab.keys() if i.find('\u2581') != -1]) / len(vocab)) > 0.2
     g_present = (len([1 for i in vocab.keys() if i.find('\u0120') != -1]) / len(vocab)) > 0.2
+    if hack_present:
+        result.add("hack")
     if llama_present:
         result.add("<0xHH>")
     if underscore_present:
@@ -30,7 +33,10 @@ def get_original_characters(vocab: typing.Dict[str, int]) -> typing.Dict[int, by
     assert len(set(vocab.values())) == len(vocab), "Vocabulary contains duplicate token IDs!"
     processors = _autodetect_processors(vocab)
     for i in processors:
-        if i == "sentencepiece":
+        if i == "hack":
+            old_char_to_new_char["\u2581".encode("UTF-8")] = b" "
+            old_char_to_new_char["\u240a".encode("UTF-8")] = b"\n"
+        elif i == "sentencepiece":
             old_char_to_new_char["\u2581".encode("UTF-8")] = b" "
         elif i == "dot_G":
             old_char_to_new_char.update(huggingface_bytelevel_decoder())
